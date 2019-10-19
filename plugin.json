@@ -1,0 +1,16 @@
+{
+  "slug": "cpaudio",
+  "name": "cpaudio",
+  "version": "1.0.0",
+  "license": "proprietary",
+  "brand": "cpaudio",
+  "author": "tanthanh",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": []
+}
