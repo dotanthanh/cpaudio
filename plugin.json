@@ -2,7 +2,7 @@
   "slug": "cpaudio",
   "name": "cpaudio",
   "version": "1.0.0",
-  "license": "proprietary",
+  "license": "CC0-1.0",
   "brand": "cpaudio",
   "author": "tanthanh",
   "authorEmail": "",
@@ -12,5 +12,12 @@
   "sourceUrl": "",
   "donateUrl": "",
   "changelogUrl": "",
-  "modules": []
+  "modules": [
+    {
+      "slug": "VCO",
+      "name": "VCO",
+      "description": "simple sine oscillator",
+      "tags": []
+    }
+  ]
 }
