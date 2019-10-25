@@ -16,7 +16,7 @@
     {
       "slug": "VCO",
       "name": "VCO",
-      "description": "simple sine oscillator",
+      "description": "an essestial VCO for generating audio/signal",
       "tags": []
     }
   ]
