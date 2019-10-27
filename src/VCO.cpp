@@ -7,6 +7,7 @@ struct VCO : Module {
 		FM_PARAM,
 		PWM_PARAM,
 		PWIDTH_PARAM,
+		SYNC_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -24,19 +25,58 @@ struct VCO : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		PATH5729_1_LIGHT,
+		PITCH_LIGHT,
 		NUM_LIGHTS
 	};
 
+	// default frequency A4 (tuning standard)
+	float baseFreq = dsp::FREQ_A4;
+	float phase = 0.f;
+
 	VCO() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(FREQ_PARAM, 0.f, 1.f, 0.f, "");
+		// A1 -> A7
+		configParam(FREQ_PARAM, -28.9f, 28.9f, 0.f, "Frequency", " Hz", dsp::FREQ_SEMITONE, dsp::FREQ_A4);
 		configParam(FM_PARAM, 0.f, 1.f, 0.f, "");
 		configParam(PWM_PARAM, 0.f, 1.f, 0.f, "");
 		configParam(PWIDTH_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(SYNC_PARAM, 0.f, 1.f, 0.f, "");
 	}
 
 	void process(const ProcessArgs& args) override {
+		float pitch = params[FREQ_PARAM].getValue() / 12.f;
+        // pitch += inputs[PITCH_INPUT].getVoltaFREQ;
+        float freq = baseFreq * std::pow(2.f, pitch);
+
+        // Accumulate the phase
+        phase += freq * args.sampleTime;
+		// wrap phase in range [-0.5, 0.5]
+		phase -= phase > 0.5f ? 1.f : 0.f;
+
+        // Audio signals are typically +/-5V
+        outputs[SIN_OUTPUT].setVoltage(5.f * sin(phase));
+        outputs[TRI_OUTPUT].setVoltage(5.f * tri(phase));
+		outputs[SAW_OUTPUT].setVoltage(5.f * saw(phase));
+		outputs[SQR_OUTPUT].setVoltage(5.f * sqr(phase));
+	}
+
+	// need alias reduction for all these waves here
+	float sin(float phase) {
+		return std::sin(2.f * M_PI * phase);
+	}
+
+	float tri(float phase) {
+		bool posDerivative = -0.25f < phase && phase < 0.25f;
+		float x = posDerivative ? phase : (phase < 0 ? (phase + 0.5f) : (phase - 0.5f));
+		return (posDerivative ? 4.f : -4.f) * x;
+	}
+
+	float saw(float phase) {
+		return 2.f * phase;
+	}
+
+	float sqr(float phase) {
+		return phase > 0 ? 1.f : -1.f;
 	}
 };
 
@@ -55,6 +95,7 @@ struct VCOWidget : ModuleWidget {
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.5, 44.5)), module, VCO::FM_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.5, 60.5)), module, VCO::PWM_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.5, 76.5)), module, VCO::PWIDTH_PARAM));
+		addParam(createParam<CKSS>(mm2px(Vec(34.5, 21.5)), module, VCO::SYNC_PARAM));
 
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.0, 98.5)), module, VCO::PITCH_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.8, 98.5)), module, VCO::FM_INPUT));
@@ -66,10 +107,7 @@ struct VCOWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(31.6, 116.5)), module, VCO::SAW_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(43.4, 116.5)), module, VCO::SQR_OUTPUT));
 
-		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(22.25, 18.25)), module, VCO::PATH5729_1_LIGHT));
-
-		// mm2px(Vec(4.0, 7.0))
-		addChild(createWidget<Widget>(mm2px(Vec(34.5, 21.5))));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(22.25, 18.25)), module, VCO::PITCH_LIGHT));
 	}
 };
 
