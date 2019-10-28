@@ -68,7 +68,7 @@ struct VCO : Module {
 		// Accumulate the phase (or reset partway of sync direction is reversed)
         phase += freq * args.sampleTime * syncDirection;
 		// wrap phase in range [-0.5, 0.5]
-		phase -= phase >= 0.5f || phase <= -0.5f ? std::trunc(phase) : 0.f;
+		phase -= phase >= 0.5f || phase <= -0.5f ? (1.f * syncDirection) : 0.f;
 
 		if (inputs[SYNC_INPUT].isConnected()) {
 			float syncInput = inputs[SYNC_INPUT].getVoltage();
@@ -81,6 +81,8 @@ struct VCO : Module {
 				}
 			}
 			lastSyncInput = syncInput;
+		} else {
+			syncDirection = 1.f;
 		}
 
         // Audio signals are typically +/-5V
