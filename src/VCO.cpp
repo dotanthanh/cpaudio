@@ -55,13 +55,8 @@ struct VCO : Module {
 
 		float pitch = freqParam;
 
-		if (inputs[PITCH_INPUT].isConnected()) {
-			pitch += inputs[PITCH_INPUT].getVoltage();
-		}
-
-		if (inputs[FM_INPUT].isConnected()) {
-			pitch += fmParam * inputs[FM_INPUT].getVoltage();
-		}
+		pitch += inputs[PITCH_INPUT].getVoltage();
+		pitch += fmParam * inputs[FM_INPUT].getVoltage();
 
 		pitch = clamp(pitch, -4.f, 4.f);
         float freq = baseFreq * std::pow(2.f, pitch);

@@ -18,6 +18,12 @@
       "name": "VCO",
       "description": "an essestial VCO for generating audio/signal",
       "tags": []
+    },
+    {
+      "slug": "Envelope",
+      "name": "Envelope",
+      "description": "a classic, essential voltage-controlled envelope generator.",
+      "tags": []
     }
   ]
 }
