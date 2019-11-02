@@ -69,60 +69,82 @@ struct Envelope : Module {
 		float attackParam = params[ATTACK_PARAM].getValue();
 		float holdParam = params[HOLD_PARAM].getValue();
 		float decayParam = params[DECAY_PARAM].getValue();
-		float sustainLevel = params[SUSTAIN_PARAM].getValue();
+		float sustainParam = params[SUSTAIN_PARAM].getValue();
 		float releaseParam = params[RELEASE_PARAM].getValue();
+
+		float attack = attackParam + inputs[ATTACK_INPUT].getVoltage() / 10.f;
+		float hold = 1.f + inputs[HOLD_INPUT].getVoltage() / 10.f;
+		float decay = decayParam + inputs[DECAY_INPUT].getVoltage() / 10.f;
+		float sustain = sustainParam + inputs[SUSTAIN_INPUT].getVoltage() / 10.f;
+		float release = releaseParam + inputs[RELEASE_INPUT].getVoltage() / 10.f;
+
+		attack = clamp(attack, 0.f, 1.f);
+		hold = clamp(hold, 0.f, 1.f);
+		decay = clamp(decay, 0.f, 1.f);
+		sustain = clamp(sustain, 0.f, 1.f);
+		release = clamp(release, 0.f, 1.f);
 
 		float attackTime = std::pow(10000.f, attackParam);
 		float holdTime = std::pow(10000.f, holdParam) - MIN_DURATION * 1000.f;
-		float decayTime = std::pow(1000.f, decayParam);
+		float decayTime = std::pow(10000.f, decayParam);
 		float releaseTime = std::pow(10000.f, releaseParam);
 
 		float gateInput = inputs[GATE_INPUT].getVoltage();
 
-		// start over
-		if (lastGateInput <= 0.f && gateInput >= 0) {
+		// start over if gate signal finished a period
+		if (lastGateInput <= 1.f && gateInput > 1.f) {
 			openGateDuration = 0.f;
 			clock.reset();
 		}
 
 		clock.step(args.sampleTime * 1000.f);
 		float time = clock.getClockTime();
-		float value = 0.f;
+		float value;
 
-		float attackBase = std::pow(PARAM_BASE, -attackParam) / MIN_DURATION;
-		float decayBase = std::pow(PARAM_BASE, -decayParam) / MIN_DURATION;
-		float releaseBase = std::pow(PARAM_BASE, -releaseParam) / MIN_DURATION;
+		float attackBase = getExponentialBase(attack);
+		float decayBase = getExponentialBase(decay);
+		float releaseBase = getExponentialBase(release);
 
-		if (gateInput > 0) {
+		// gate signal lower bound 1V
+		if (gateInput > 1.f) {
 			if (time <= attackTime) {
 				// do attack
-				value = 1.f - (1.f - gateStartValue) * std::pow(attackBase, -time / attackTime);
+				// attack value approach but never reach 1
+				// => threshold normalization coefficient
+				float normalizeCoef = 1.f - (1.f - gateStartValue) * std::pow(attackBase, -1.f);
+				value = (1.f - (1.f - gateStartValue) * std::pow(attackBase, -time / attackTime)) / normalizeCoef;
 			} else if (time <= attackTime + holdTime) {
 				// do hold
-				value = 1.f;
+				value = hold;
 			} else {
 				// do decay (approaching sustain level)
 				float decayDuration = time - holdTime - attackTime;
-				value = (1.f - sustainLevel) * std::pow(decayBase, -decayDuration / decayTime) + sustainLevel;
+				value = (1.f - sustain) * std::pow(decayBase, -decayDuration / decayTime) + sustain;
 			}
 
 			openGateDuration += args.sampleTime * 1000.f;
 			gateEndValue = value;
 		} else {
 			// do release (approaching 0)
-			// float releaseDuration = time - openGateDuration;
-			// value = gateEndValue * std::pow(releaseBase, -releaseDuration / releaseTime);
-			// gateStartValue = value;
+			float releaseDuration = time - openGateDuration;
+			value = gateEndValue * std::pow(releaseBase, -releaseDuration / releaseTime);
+			gateStartValue = value;
 		}
 
-		// float attack = attackParam + inputs[ATTACK_INPUT].getVoltage() / 10.f;
-		// float hold = holdParam + inputs[HOLD_INPUT].getVoltage() / 10.f;
-		// float decay = decayParam + inputs[DECAY_INPUT].getVoltage() / 10.f;
-		// float sustain = sustainParam + inputs[SUSTAIN_INPUT].getVoltage() / 10.f;
-		// float release = releaseParam + inputs[RELEASE_INPUT].getVoltage() / 10.f;
 		lastGateInput = gateInput;
 		value = clamp(value, 0.f, 1.f);
+		// unipolar
 		outputs[MAIN_OUTPUT].setVoltage(10.f * value);
+	}
+
+	float getExponentialBase(float param) {
+		// param should be in range [0, 1]
+		if (0.f <= param && param <= 1.f) {
+			return std::pow(100.f, -param) * 300.f;
+		} else {
+			// safe check: return natural base
+			return std::exp(1);
+		}
 	}
 };
 
@@ -141,7 +163,7 @@ struct EnvelopeWidget : ModuleWidget {
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.217, 43.5)), module, Envelope::HOLD_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.217, 60.5)), module, Envelope::DECAY_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.217, 77.5)), module, Envelope::SUSTAIN_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.218, 94.5)), module, Envelope::RELEASE_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(36.217, 94.5)), module, Envelope::RELEASE_PARAM));
 
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.0, 26.5)), module, Envelope::ATTACK_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.0, 43.5)), module, Envelope::HOLD_INPUT));
