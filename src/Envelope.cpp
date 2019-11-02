@@ -3,6 +3,23 @@
 // at least 1ms for attack/decay
 const float MIN_DURATION = 1e-3f;
 const float MAX_DURATION = 10.f;
+const float PARAM_BASE = MAX_DURATION / MIN_DURATION;
+
+struct EnvelopeClock {
+	float time = 0.f;
+
+	void step(float timeStep) {
+		time += timeStep;
+	}
+
+	float getClockTime() {
+		return time;
+	}
+
+	void reset() {
+		time = 0.f;
+	}
+};
 
 struct Envelope : Module {
 	enum ParamIds {
@@ -31,17 +48,20 @@ struct Envelope : Module {
 		NUM_LIGHTS
 	};
 
-	float time = 0.f;
-	float lastValue = 0.f;
+	EnvelopeClock clock;
+	float lastGateInput = 0.f;
+	float gateStartValue = 0.f;
+	float gateEndValue = 0.f;
+	float openGateDuration = 0.f;
 
 	Envelope() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// linear envelope
-		configParam(ATTACK_PARAM, 0.f, 1.f, 0.5f, "Attack", " ms", 10000.f, MIN_DURATION * 1000);
-		configParam(HOLD_PARAM, 0.f, 1.f, 0.f, "Hold ", " ms", 10000.f, MIN_DURATION * 1000);
-		configParam(DECAY_PARAM, 0.f, 1.f, 0.5f, "Decay", " ms", 10000.f, MIN_DURATION * 1000);
-		configParam(SUSTAIN_PARAM, 0.f, 1.f, 0.f, "Sustain", "%", 0.f, 100.f);
-		configParam(RELEASE_PARAM, 0.f, 1.f, 0.5, "Release", " ms", 10000.f, MIN_DURATION * 1000);
+		configParam(ATTACK_PARAM, 0.f, 1.f, 0.5f, "Attack", " ms", PARAM_BASE, MIN_DURATION * 1000.f);
+		configParam(HOLD_PARAM, 0.f, 1.f, 0.f, "Hold ", " ms", PARAM_BASE, MIN_DURATION * 1000.f, -MIN_DURATION);
+		configParam(DECAY_PARAM, 0.f, 1.f, 0.f, "Decay", " ms", PARAM_BASE, MIN_DURATION * 1000.f);
+		configParam(SUSTAIN_PARAM, 0.f, 1.f, 0.5f, "Sustain", "%", 0.f, 100.f);
+		configParam(RELEASE_PARAM, 0.f, 1.f, 0.f, "Release", " ms", PARAM_BASE, MIN_DURATION * 1000.f);
 	}
 
 	// y[x] = y[]
@@ -49,19 +69,50 @@ struct Envelope : Module {
 		float attackParam = params[ATTACK_PARAM].getValue();
 		float holdParam = params[HOLD_PARAM].getValue();
 		float decayParam = params[DECAY_PARAM].getValue();
-		float sustainParam = params[SUSTAIN_PARAM].getValue();
+		float sustainLevel = params[SUSTAIN_PARAM].getValue();
 		float releaseParam = params[RELEASE_PARAM].getValue();
 
-		time += args.sampleTime * 1000.f;
-		float decayTime = std::pow(10000.f, decayParam);
-		float base = std::log(1.f / sustainParam) / decayTime;
+		float attackTime = std::pow(10000.f, attackParam);
+		float holdTime = std::pow(10000.f, holdParam) - MIN_DURATION * 1000.f;
+		float decayTime = std::pow(1000.f, decayParam);
+		float releaseTime = std::pow(10000.f, releaseParam);
 
-		float value;
-		if (0.f < time && time < decayTime && inputs[GATE_INPUT].getVoltage() > 0) {
-			value = 1.f * std::exp(-base * time);
+		float gateInput = inputs[GATE_INPUT].getVoltage();
+
+		// start over
+		if (lastGateInput <= 0.f && gateInput >= 0) {
+			openGateDuration = 0.f;
+			clock.reset();
+		}
+
+		clock.step(args.sampleTime * 1000.f);
+		float time = clock.getClockTime();
+		float value = 0.f;
+
+		float attackBase = std::pow(PARAM_BASE, -attackParam) / MIN_DURATION;
+		float decayBase = std::pow(PARAM_BASE, -decayParam) / MIN_DURATION;
+		float releaseBase = std::pow(PARAM_BASE, -releaseParam) / MIN_DURATION;
+
+		if (gateInput > 0) {
+			if (time <= attackTime) {
+				// do attack
+				value = 1.f - (1.f - gateStartValue) * std::pow(attackBase, -time / attackTime);
+			} else if (time <= attackTime + holdTime) {
+				// do hold
+				value = 1.f;
+			} else {
+				// do decay (approaching sustain level)
+				float decayDuration = time - holdTime - attackTime;
+				value = (1.f - sustainLevel) * std::pow(decayBase, -decayDuration / decayTime) + sustainLevel;
+			}
+
+			openGateDuration += args.sampleTime * 1000.f;
+			gateEndValue = value;
 		} else {
-			value =r 1.f;
-			time = 0.f;
+			// do release (approaching 0)
+			// float releaseDuration = time - openGateDuration;
+			// value = gateEndValue * std::pow(releaseBase, -releaseDuration / releaseTime);
+			// gateStartValue = value;
 		}
 
 		// float attack = attackParam + inputs[ATTACK_INPUT].getVoltage() / 10.f;
@@ -69,7 +120,9 @@ struct Envelope : Module {
 		// float decay = decayParam + inputs[DECAY_INPUT].getVoltage() / 10.f;
 		// float sustain = sustainParam + inputs[SUSTAIN_INPUT].getVoltage() / 10.f;
 		// float release = releaseParam + inputs[RELEASE_INPUT].getVoltage() / 10.f;
-		outputs[MAIN_OUTPUT].setVoltage(value);
+		lastGateInput = gateInput;
+		value = clamp(value, 0.f, 1.f);
+		outputs[MAIN_OUTPUT].setVoltage(10.f * value);
 	}
 };
 
