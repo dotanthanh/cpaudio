@@ -48,11 +48,14 @@ struct Envelope : Module {
 		NUM_LIGHTS
 	};
 
+	dsp::SchmittTrigger trigger;
 	EnvelopeClock clock;
+
 	float lastGateInput = 0.f;
 	float gateStartValue = 0.f;
 	float gateEndValue = 0.f;
 	float openGateDuration = 0.f;
+	float lastValue = 0.f;
 
 	Envelope() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -84,15 +87,21 @@ struct Envelope : Module {
 		sustain = clamp(sustain, 0.f, 1.f);
 		release = clamp(release, 0.f, 1.f);
 
+		// get the duration for each phase of the envelope
 		float attackTime = std::pow(10000.f, attackParam);
 		float holdTime = std::pow(10000.f, holdParam) - MIN_DURATION * 1000.f;
 		float decayTime = std::pow(10000.f, decayParam);
 		float releaseTime = std::pow(10000.f, releaseParam);
 
+		// identify trigger signal with low threshold of 0.1V and high threshold of 1V - 2V
+		// (due to ringing and overshoot from Gibbs effect)
+		float isTriggered = trigger.process(rescale(inputs[RETRIGGER_INPUT].getVoltage(), 0.1f, 2.f, 0.f, 1.f));
 		float gateInput = inputs[GATE_INPUT].getVoltage();
+		float gateIsOpened = gateInput > 1.f;
 
-		// start over if gate signal finished a period
-		if (lastGateInput <= 1.f && gateInput > 1.f) {
+		// re-trigger if gate signal finished a period, or there is trigger signal while gate is opened
+		if ((lastGateInput <= 1.f && gateInput > 1.f) || (isTriggered && gateIsOpened)) {
+			gateStartValue = lastValue;
 			openGateDuration = 0.f;
 			clock.reset();
 		}
@@ -101,16 +110,16 @@ struct Envelope : Module {
 		float time = clock.getClockTime();
 		float value;
 
+		// calculate base for exponential decay function
 		float attackBase = getExponentialBase(attack);
 		float decayBase = getExponentialBase(decay);
 		float releaseBase = getExponentialBase(release);
 
-		// gate signal lower bound 1V
-		if (gateInput > 1.f) {
+		if (gateIsOpened) {
 			if (time <= attackTime) {
 				// do attack
 				// attack value approach but never reach 1
-				// => threshold normalization coefficient
+				// => use threshold normalization coefficient
 				float normalizeCoef = 1.f - (1.f - gateStartValue) * std::pow(attackBase, -1.f);
 				value = (1.f - (1.f - gateStartValue) * std::pow(attackBase, -time / attackTime)) / normalizeCoef;
 			} else if (time <= attackTime + holdTime) {
@@ -131,7 +140,10 @@ struct Envelope : Module {
 			gateStartValue = value;
 		}
 
+		// keeping last value for re-trigger
+		lastValue = value;
 		lastGateInput = gateInput;
+
 		value = clamp(value, 0.f, 1.f);
 		// unipolar
 		outputs[MAIN_OUTPUT].setVoltage(10.f * value);
