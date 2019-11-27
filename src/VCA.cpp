@@ -1,5 +1,7 @@
 #include "plugin.hpp"
 
+// fixed base of 50 for exponential control voltage input
+const float EXP_BASE = 50.f;
 
 struct VCA : Module {
 	enum ParamIds {
@@ -22,10 +24,27 @@ struct VCA : Module {
 
 	VCA() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(GAIN_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(GAIN_PARAM, 0.f, 1.f, 0.5f, "Gain", "%", 0.f, 100.f);
 	}
 
 	void process(const ProcessArgs& args) override {
+		float gainLevel = params[GAIN_PARAM].getValue();
+		float output = inputs[MAIN_INPUT].getVoltage();
+
+		// amplitude modulation using exponential function
+		float normalizeFactor = 1.f / (std::pow(EXP_BASE, 1) - 1.f);
+		if (inputs[EXP_INPUT].isConnected()) {
+			float expInput = inputs[EXP_INPUT].getVoltage() / 10.f;
+			output *= normalizeFactor * std::pow(EXP_BASE, expInput);
+		}
+
+		// normal (linear) amplitude modulation
+		if (inputs[LINEAR_INPUT].isConnected()) {
+			output *= inputs[LINEAR_INPUT].getVoltage() / 10.f;
+		}
+
+		// apply gain and set output
+		outputs[MAIN_OUTPUT].setVoltage(gainLevel * output);
 	}
 };
 
