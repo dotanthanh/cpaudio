@@ -24,6 +24,18 @@
       "name": "Envelope",
       "description": "a classic, essential voltage-controlled envelope generator.",
       "tags": []
+    },
+    {
+      "slug": "VCF",
+      "name": "VCF",
+      "description": "a classic 2-pole voltage-controlled multi-mode filter.",
+      "tags": []
+    },
+    {
+      "slug": "VCA",
+      "name": "VCA",
+      "description": "a classic, minimal voltage-controlled amplifier/attenuator.",
+      "tags": []
     }
   ]
 }
