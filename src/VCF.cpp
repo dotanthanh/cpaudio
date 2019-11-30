@@ -1,5 +1,7 @@
 #include "plugin.hpp"
 
+const float CUTOFF_PARAM_BASE = std::pow(2.f, 9.f);
+const float CUTOFF_PARAM_MULTIPLIER = std::pow(2.f, 9.f);
 
 struct VCF : Module {
 	enum ParamIds {
@@ -25,16 +27,63 @@ struct VCF : Module {
 		NUM_LIGHTS
 	};
 
+	dsp::TBiquadFilter<float> filter;
+
 	VCF() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(CUTOFF_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(TYPE_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(FREQ_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(RESONANCE_PARAM, 0.f, 1.f, 0.f, "");
-		configParam(DRIVE_PARAM, 0.f, 1.f, 0.f, "");
+		// range: (2^4) 16Hz - (2^13) 8192Hz
+		// default at ~362Hz
+		configParam(CUTOFF_PARAM, 0.f, 1.f, 0.5f, "Cutoff frequency", " Hz", CUTOFF_PARAM_BASE, CUTOFF_PARAM_MULTIPLIER);
+		configParam(TYPE_PARAM, 0.f, 1.f, 0.f, "Filter type");
+		configParam(FREQ_PARAM, -1.f, 1.f, 0.f, "Cutoff CV level", "%", 0.f, 100.f);
+		configParam(RESONANCE_PARAM, 0.f, 1.f, 0.f, "Resonance", "%", 0.f, 100.f);
+		configParam(DRIVE_PARAM, 0.f, 1.f, 0.f, "Gain", "", 0.f, 10.f);
+	}
+
+	float getFrequencyFromParam(float value) {
+		return std::pow(CUTOFF_PARAM_BASE, value) * CUTOFF_PARAM_MULTIPLIER;
+	}
+
+	float getQFactorFromResonance(float paramValue) {
+		return 0;
 	}
 
 	void process(const ProcessArgs& args) override {
+		float cutoffParam = params[CUTOFF_PARAM].getValue();
+		float freqParam = params[FREQ_PARAM].getValue();
+		float typeParam = params[TYPE_PARAM].getValue();
+		float driveParam = params[DRIVE_PARAM].getValue();
+		float resParam = params[RESONANCE_PARAM].getValue();
+		float freqInput = inputs[FREQ_INPUT].getVoltage();
+		float driveInput = inputs[DRIVE_INPUT].getVoltage();
+		float resInput = inputs[RESONANCE_INPUT].getVoltage();
+		float in = inputs[MAIN_INPUT].getVoltage();
+
+		// get type of filter
+		dsp::TBiquadFilter::Type type = typeParam > 0 ? dsp::TBiquadFilter::HIGH_PASS : dsp::TBiquadFilter::LOW_PASS;
+
+		// get modulated cutoff frequency (Nyquist)
+		float cutoff = cutoffParam + freqParam * freqInput / 10.f;
+		cutoff = clamp(cutoff, 0.f, 1.f);
+		cutoff = this.getFrequencyFromParam(cutoff) / args.sampleRate;
+		cutoff = clamp(cutoff, 0.f, 0.5f);
+
+		// get resonance level / Q factor ()
+		// assuming modulating source input is unipolar (0 - 10V)
+		float resonance = resParam + resInput / 10.f;
+		resonance = clamp(resonance, 0.f, 1.f);
+		float qFactor = this.getQFactorFromResonance(resonance);
+
+		// gain for filtered signal (before or after filtering ?)
+		float drive = driveParam + driveInput / 10.f;
+		float gain = std::pow(10.f, drive);
+		// assuming input signal is bipolar (±5V)
+		in = gain * in / 5.f;
+
+		filter.setParameters(type, cutoff, qFactor, 1.f);
+		float output = filter.process(in);
+
+		outputs[MAIN_OUTPUT].setVoltage(output);
 	}
 };
 
