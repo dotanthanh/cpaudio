@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 
 const float CUTOFF_PARAM_BASE = std::pow(2.f, 9.f);
-const float CUTOFF_PARAM_MULTIPLIER = std::pow(2.f, 9.f);
+const float CUTOFF_PARAM_MULTIPLIER = std::pow(2.f, 4.f);
 
 struct VCF : Module {
 	enum ParamIds {
@@ -27,7 +27,7 @@ struct VCF : Module {
 		NUM_LIGHTS
 	};
 
-	dsp::TBiquadFilter<float> filter;
+	dsp::BiquadFilter filter;
 
 	VCF() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -40,12 +40,17 @@ struct VCF : Module {
 		configParam(DRIVE_PARAM, 0.f, 1.f, 0.f, "Gain", "", 0.f, 10.f);
 	}
 
-	float getFrequencyFromParam(float value) {
+	float freqParamToFreq(float value) {
 		return std::pow(CUTOFF_PARAM_BASE, value) * CUTOFF_PARAM_MULTIPLIER;
 	}
 
-	float getQFactorFromResonance(float paramValue) {
-		return 0;
+	float resonanceParamToQFactor(float value) {
+		// q factor should by default not overdamped (< 0.5)
+		return 0.5f * std::pow(50.f, value);
+	}
+
+	float driveParamToGain(float value) {
+		return std::pow(1.f + value, 4.f);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -60,27 +65,31 @@ struct VCF : Module {
 		float in = inputs[MAIN_INPUT].getVoltage();
 
 		// get type of filter
-		dsp::TBiquadFilter::Type type = typeParam > 0 ? dsp::TBiquadFilter::HIGH_PASS : dsp::TBiquadFilter::LOW_PASS;
+		dsp::BiquadFilter::Type type = typeParam > 0 ? dsp::BiquadFilter::HIGHPASS : dsp::BiquadFilter::LOWPASS;
 
 		// get modulated cutoff frequency (Nyquist)
 		float cutoff = cutoffParam + freqParam * freqInput / 10.f;
 		cutoff = clamp(cutoff, 0.f, 1.f);
-		cutoff = this.getFrequencyFromParam(cutoff) / args.sampleRate;
-		cutoff = clamp(cutoff, 0.f, 0.5f);
+		float cutoffFreq = freqParamToFreq(cutoff) / args.sampleRate;
+		cutoffFreq = clamp(cutoffFreq, 0.f, 0.5f);
 
 		// get resonance level / Q factor ()
 		// assuming modulating source input is unipolar (0 - 10V)
 		float resonance = resParam + resInput / 10.f;
 		resonance = clamp(resonance, 0.f, 1.f);
-		float qFactor = this.getQFactorFromResonance(resonance);
+		float qFactor = resonanceParamToQFactor(resonance);
 
 		// gain for filtered signal (before or after filtering ?)
 		float drive = driveParam + driveInput / 10.f;
-		float gain = std::pow(10.f, drive);
+		drive = clamp(drive, 0.f, 1.f);
+		float gain = driveParamToGain(drive);
 		// assuming input signal is bipolar (±5V)
-		in = gain * in / 5.f;
+		in *= gain;
 
-		filter.setParameters(type, cutoff, qFactor, 1.f);
+		// add -120dB noise to bootstrap self-oscillation
+		in += 1e-6f * (2.f * random::uniform() - 1.f);
+
+		filter.setParameters(type, cutoffFreq, qFactor, 1.f);
 		float output = filter.process(in);
 
 		outputs[MAIN_OUTPUT].setVoltage(output);
