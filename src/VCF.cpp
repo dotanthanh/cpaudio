@@ -40,13 +40,19 @@ struct VCF : Module {
 		configParam(DRIVE_PARAM, 0.f, 1.f, 0.f, "Gain", "", 0.f, 10.f);
 	}
 
-	float freqParamToFreq(float value) {
+	float cutoffParamToFreq(float value) {
 		return std::pow(CUTOFF_PARAM_BASE, value) * CUTOFF_PARAM_MULTIPLIER;
 	}
 
 	float resonanceParamToQFactor(float value) {
 		// q factor should by default not overdamped (< 0.5)
-		return 0.5f * std::pow(50.f, value);
+		// with resonance close to 100%, mimic analog self-oscillation due to infinite Q factor
+		float q = 0.5f * std::pow(50.f, value);
+		if (value < 0.9) {
+			return q;	
+		} else {
+			return q * std::pow(HUGE_VALF, 5.f * (value - 0.9f));
+		}
 	}
 
 	float driveParamToGain(float value) {
@@ -70,7 +76,7 @@ struct VCF : Module {
 		// get modulated cutoff frequency (Nyquist)
 		float cutoff = cutoffParam + freqParam * freqInput / 10.f;
 		cutoff = clamp(cutoff, 0.f, 1.f);
-		float cutoffFreq = freqParamToFreq(cutoff) / args.sampleRate;
+		float cutoffFreq = cutoffParamToFreq(cutoff) / args.sampleRate;
 		cutoffFreq = clamp(cutoffFreq, 0.f, 0.5f);
 
 		// get resonance level / Q factor ()
@@ -84,13 +90,13 @@ struct VCF : Module {
 		drive = clamp(drive, 0.f, 1.f);
 		float gain = driveParamToGain(drive);
 		// assuming input signal is bipolar (±5V)
-		in *= gain;
+		in = gain * in / 5.f;
 
-		// add -120dB noise to bootstrap self-oscillation
-		in += 1e-6f * (2.f * random::uniform() - 1.f);
+		// add a bit of noise to bootstrap self-oscillation
+		in += 1e-3f * (2.f * random::uniform() - 1.f);
 
-		filter.setParameters(type, cutoffFreq, qFactor, 1.f);
-		float output = filter.process(in);
+		filter.setParameters(type, cutoffFreq, qFactor, 0.f);
+		float output = 5.f * filter.process(in);
 
 		outputs[MAIN_OUTPUT].setVoltage(output);
 	}
