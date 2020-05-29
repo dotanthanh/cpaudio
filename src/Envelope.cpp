@@ -76,7 +76,7 @@ struct Envelope : Module {
 		float releaseParam = params[RELEASE_PARAM].getValue();
 
 		float attack = attackParam + inputs[ATTACK_INPUT].getVoltage() / 10.f;
-		float hold = 1.f + inputs[HOLD_INPUT].getVoltage() / 10.f;
+		float hold = holdParam + inputs[HOLD_INPUT].getVoltage() / 10.f;
 		float decay = decayParam + inputs[DECAY_INPUT].getVoltage() / 10.f;
 		float sustain = sustainParam + inputs[SUSTAIN_INPUT].getVoltage() / 10.f;
 		float release = releaseParam + inputs[RELEASE_INPUT].getVoltage() / 10.f;
@@ -88,16 +88,16 @@ struct Envelope : Module {
 		release = clamp(release, 0.f, 1.f);
 
 		// get the duration for each phase of the envelope
-		float attackTime = std::pow(10000.f, attackParam);
-		float holdTime = std::pow(10000.f, holdParam) - MIN_DURATION * 1000.f;
-		float decayTime = std::pow(10000.f, decayParam);
-		float releaseTime = std::pow(10000.f, releaseParam);
+		float attackTime = std::pow(10000.f, attack);
+		float holdTime = std::pow(10000.f, hold) - MIN_DURATION * 1000.f;
+		float decayTime = std::pow(10000.f, decay);
+		float releaseTime = std::pow(10000.f, release);
 
 		// identify trigger signal with low threshold of 0.1V and high threshold of 1V - 2V
 		// (due to ringing and overshoot from Gibbs effect)
-		float isTriggered = trigger.process(rescale(inputs[RETRIGGER_INPUT].getVoltage(), 0.1f, 2.f, 0.f, 1.f));
+		bool isTriggered = trigger.process(rescale(inputs[RETRIGGER_INPUT].getVoltage(), 0.1f, 2.f, 0.f, 1.f));
 		float gateInput = inputs[GATE_INPUT].getVoltage();
-		float gateIsOpened = gateInput > 1.f;
+		bool gateIsOpened = gateInput > 1.f;
 
 		// re-trigger if gate signal finished a period, or there is trigger signal while gate is opened
 		if ((lastGateInput <= 1.f && gateInput > 1.f) || (isTriggered && gateIsOpened)) {
@@ -123,8 +123,7 @@ struct Envelope : Module {
 				float normalizeCoef = 1.f - (1.f - gateStartValue) * std::pow(attackBase, -1.f);
 				value = (1.f - (1.f - gateStartValue) * std::pow(attackBase, -time / attackTime)) / normalizeCoef;
 			} else if (time <= attackTime + holdTime) {
-				// do hold
-				value = hold;
+				// hold stage, do nothing
 			} else {
 				// do decay (approaching sustain level)
 				float decayDuration = time - holdTime - attackTime;

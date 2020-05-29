@@ -44,19 +44,19 @@ struct VCF : Module {
 		return std::pow(CUTOFF_PARAM_BASE, value) * CUTOFF_PARAM_MULTIPLIER;
 	}
 
-	float resonanceParamToQFactor(float value) {
+	float resonanceParamToQFactor(float resonance) {
 		// q factor should by default not overdamped (< 0.5)
 		// with resonance close to 100%, mimic analog self-oscillation due to infinite Q factor
-		float q = 0.5f * std::pow(50.f, value);
-		if (value < 0.9) {
+		float q = 0.5f * std::pow(50.f, resonance);
+		if (resonance < 0.9) {
 			return q;	
 		} else {
-			return q * std::pow(HUGE_VALF, 5.f * (value - 0.9f));
+			return q * std::pow(HUGE_VALF, 5.f * (resonance - 0.9f));
 		}
 	}
 
-	float driveParamToGain(float value) {
-		return std::pow(1.f + value, 4.f);
+	float driveParamToGain(float drive) {
+		return std::pow(1.f + drive, 3.f);
 	}
 
 	void process(const ProcessArgs& args) override {
